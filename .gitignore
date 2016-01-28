@@ -1,0 +1,8 @@
+*~
+.git/*
+src/CMakeFiles/*
+src/CMakeCache.txt
+*.cmake
+Makefile
+src/OpenCV_detector
+src/*.avi
