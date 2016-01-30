@@ -6,3 +6,4 @@ src/CMakeCache.txt
 Makefile
 src/OpenCV_detector
 src/*.avi
+src/*.mp4

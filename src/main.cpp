@@ -4,7 +4,7 @@
 using namespace std;
 
 int main() {
-    Detector detector("video.avi");
+    Detector detector("Traffic in China.mp4");
     detector.detect();
     return 0;
 }
