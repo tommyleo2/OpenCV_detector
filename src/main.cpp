@@ -4,8 +4,8 @@
 using namespace std;
 
 int main() {
-    Detector detector("Traffic in China.mp4");
-    detector.detect();
+    Detector detector("vi.avi");
+    detector.vehicleNum();
     return 0;
 }
 
