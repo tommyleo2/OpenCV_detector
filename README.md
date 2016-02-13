@@ -15,3 +15,7 @@ Ver 1.1
    also be detected.
 
 To do: adjust the MIN_DIF and MAX_DIF to minimize the error, count a cluster of points as a single car
+
+Ver 1.2
+------------------
+1. circle the adjacent feature points as a single car, may exist measurement error
