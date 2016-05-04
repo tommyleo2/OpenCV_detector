@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 2.8)
+set(CMAKE_CXX_FLAGS_DEBUG "$ENV{CXXFLAGS} -O0 -Wall -g")
 project(detect)
 find_package(OpenCV REQUIRED)
 add_executable(detect test.cpp)
