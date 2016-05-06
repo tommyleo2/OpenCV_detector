@@ -6,4 +6,4 @@ v1.0
 
 v1.1
   1. FramePool Finished, need some modification while sampling
-  2. Maybe multiple task in one class.
+  2. Todo: Maybe multiple task in one class.
