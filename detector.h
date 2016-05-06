@@ -27,9 +27,19 @@
 #define MIN_DIFF 5   //KeyPoints distance
 #define MAX_RANGE 15 //maximum distance of keypoints in the same vehicle
 #define MIN_CLUSTER 5 //minimun number of keypoints to define a car
+#define RETAIN_TIME 10 //each frame will be retained for 10s in pool
 
 using namespace cv;
 using namespace std;
+
+typedef struct {
+    Mat first, second;
+} TwoMat;
+
+typedef struct {
+    vector<KeyPoint> kp;
+    Mat img;
+} Start;
 
 class Detector {
 public:
@@ -38,36 +48,27 @@ public:
     void setOriginDest(Mat _originDest);
     void setStart(Range _startX, Range _startY);
     void setDest(Range _destX, Range _destY);
-    void setFps(int _fps);
-    void detect(Mat frame1, Mat frame2, void (*showNum)(int, Mat));
-    void pushFrame(Mat frame);
+    void setMaxPoolSize(int _fps);
+    void detect(void (*showNum)(int, Mat));
+    void pushFrame(TwoMat frame);
 private:
     void detect_compute(Mat &frame, vector<KeyPoint> &kp, Mat &dp);
     int findVehicle(vector<KeyPoint> &kp1, Mat &dp1, vector<KeyPoint> &kp2, Mat &dp2);
+    int matchVehicle(Mat &frame2, vector<KeyPoint> &kp2);
 
-    
-    void detectKeyPoints(Mat start, Mat dest);
-    void matchAndDelete();
-    void findCar(vector<DMatch> &matches);
-    int matchVehicle(Mat &frame1, vector<KeyPoint> &kp1, Mat &frame2, vector<KeyPoint> &kp2);
-    
-    queue<Mat> rawFramePool;
-    list< vector<KeyPoint> > startKeyPoints;
-    vector<KeyPoint> destKeyPoints;
-    list<Mat> startDescriptor;
-    Mat destDescriptor;
+    queue<TwoMat> rawFramePool;
+    list<Start> startList;
     Range startX, startY, destX, destY;
     int carNum;
     Ptr<ORB> detector;
     Ptr<DescriptorMatcher> matcher;
     //int totalNum;
-    vector<KeyPoint> originStartKeyPoints, originDestKeyPoints;
-    Mat originStartDescriptor, originDestDescriptor;
-    int fps;  //Rate of pushing frame, Frame per second
+
+    int maxPoolSize;
     bool debug;
 };
 
-void Detector::pushFrame(Mat frame) {
+void Detector::pushFrame(TwoMat frame) {
     rawFramePool.push(frame);
 }
 
@@ -77,7 +78,7 @@ Detector::Detector(Range _startX, Range _startY, Range _destX, Range _destY, int
     destX = _destX;
     destY = _destY;
     carNum = 0;
-    fps = _fps;
+    maxPoolSize = _fps * RETAIN_TIME;
     matcher = DescriptorMatcher::create("BruteForce-Hamming");
     detector = ORB::create();
     debug = _debug;
@@ -96,26 +97,18 @@ void Detector::setDest(Range _destX, Range _destY) {
     destY = _destY;
 }
 
-void Detector::setOriginStart(Mat _originStart) {
-    detector->detect(_originStart, originStartKeyPoints, Mat());
-    detector->compute(_originStart, originStartKeyPoints, originStartDescriptor);
+void Detector::setMaxPoolSize(int _fps) {
+    maxPoolSize = _fps * RETAIN_TIME;
 }
 
-void Detector::setOriginDest(Mat _originDest) {
-    detector->detect(_originDest, originDestKeyPoints, Mat());
-    detector->compute(_originDest, originDestKeyPoints, originDestDescriptor);
-}
-
-void Detector::setFps(int _fps) {
-    fps = _fps;
-}
-
-void Detector::detect(Mat frame1, Mat frame2, void (*showNum)(int, Mat)) {
-
-    Mat start1 = frame1(startY, startX);
-    Mat dest1 = frame1(destY, destX);
-    Mat start2 = frame2(startY, startX);
-    Mat dest2 = frame2(destY, destX);
+void Detector::detect(void (*showNum)(int, Mat)) {
+    while (rawFramePool.empty());
+    TwoMat frame = rawFramePool.front();
+    rawFramePool.pop();
+    Mat start1 = (frame.first)(startY, startX);
+    Mat dest1 = (frame.first)(destY, destX);
+    Mat start2 = (frame.second)(startY, startX);
+    Mat dest2 = (frame.second)(destY, destX);
     vector<KeyPoint> start1KeyPoints, start2KeyPoints, dest1KeyPoints, dest2KeyPoints;
     Mat start1Descriptor, start2Descriptor, dest1Descriptor, dest2Descriptor;
     detect_compute(start1, start1KeyPoints, start1Descriptor);
@@ -130,6 +123,13 @@ void Detector::detect(Mat frame1, Mat frame2, void (*showNum)(int, Mat)) {
     }
     int startNum = findVehicle(start1KeyPoints, start1Descriptor, start2KeyPoints, start2Descriptor);
     int destNum = findVehicle(dest1KeyPoints, dest1Descriptor, dest2KeyPoints, dest2Descriptor);
+    Start currentStart;
+    currentStart.kp = start2KeyPoints;
+    currentStart.img = start2;
+    startList.push_back(currentStart);
+    if (startList.size() >= maxPoolSize) {
+        startList.pop_front();
+    }
     if (debug) {
         Mat imgWithPoint;
         cout << "start2.KeyPoints.size() = " << start2KeyPoints.size() << endl;
@@ -141,7 +141,7 @@ void Detector::detect(Mat frame1, Mat frame2, void (*showNum)(int, Mat)) {
         imshow("debug", imgWithPoint);
         waitKey(0);
     }
-    int matchNum = matchVehicle(start2, start2KeyPoints, dest2, dest2KeyPoints);
+    int matchNum = matchVehicle(dest2, dest2KeyPoints);
     cout << matchNum << endl;
     //Mat imgMatches;
 
@@ -176,170 +176,95 @@ int Detector::findVehicle(vector<KeyPoint> &kp1, Mat &dp1, vector<KeyPoint> &kp2
     return count;
 }
 
-int Detector::matchVehicle(Mat &frame1, vector<KeyPoint> &kp1, Mat &frame2, vector<KeyPoint> &kp2) {
+int Detector::matchVehicle(Mat &frame2, vector<KeyPoint> &kp2) {
+    Mat frame1;
+    vector<KeyPoint> kp1;
     Mat dp1, dp2;
     vector<DMatch> matches;
-    detector->compute(frame1, kp1, dp1);
-    detector->compute(frame2, kp2, dp2);
-    matcher->match(dp2, dp1, matches);
-
     int count = 0;
-    bool *mark = new bool[matches.size()];
-    for (int i = 0; i < matches.size(); i++) {
-        mark[i] = false;
-    }
-    for (int i = 0; i < matches.size(); i++) {
-        if (mark[i]) {
-            continue;
+    for (auto it = startList.begin(); it != startList.end(); it++) {
+        frame1 = it->img;
+        kp1 = it->kp;
+        detector->compute(frame1, kp1, dp1);
+        detector->compute(frame2, kp2, dp2);
+        matcher->match(dp2, dp1, matches);
+
+
+        bool *mark = new bool[matches.size()];
+        for (int i = 0; i < matches.size(); i++) {
+            mark[i] = false;
         }
-        mark[i] = true;
-        vector<DMatch> cluster;
-        cluster.push_back(matches[i]);
-        if (debug) {
-            cout << "--------\nkpNum:\n";
-        }
-        for (int j = 1 + i; j < matches.size(); j++) {
-            if (mark[j]) {
+        for (int i = 0; i < matches.size(); i++) {
+            if (mark[i]) {
                 continue;
             }
+            mark[i] = true;
+            vector<DMatch> cluster;
+            cluster.push_back(matches[i]);
             if (debug) {
-                cout << cluster.size() << endl;
+                cout << "--------\nkpNum:\n";
             }
-            for (int k = 0; k < cluster.size(); k++) {
-                float dxdiff = kp2[matches[j].queryIdx].pt.x - kp2[cluster[k].queryIdx].pt.x;
-                float dydiff = kp2[matches[j].queryIdx].pt.y - kp2[cluster[k].queryIdx].pt.y;
-                float sxdiff = kp1[matches[j].trainIdx].pt.x - kp1[cluster[k].trainIdx].pt.x;
-                float sydiff = kp1[matches[j].trainIdx].pt.y - kp1[cluster[k].trainIdx].pt.y;
-                sxdiff = sxdiff >= 0 ? sxdiff : (-1) * sxdiff;
-                sydiff = sydiff >= 0 ? sydiff : (-1) * sydiff;
-                dxdiff = dxdiff >= 0 ? dxdiff : (-1) * dxdiff;
-                dydiff = dydiff >= 0 ? dydiff : (-1) * dydiff;
-                
-                if (sxdiff < MAX_RANGE && sydiff < MAX_RANGE && dxdiff < MAX_RANGE && dydiff < MAX_RANGE) {
-                    mark[j] = true;
-                    cluster.push_back(matches[j]);
-                    if (debug) {
-                        Mat result;
-                        cout << "sxdiff: " << sxdiff << endl;
-                        cout << "dxdiff: " << dxdiff << endl;
-                        cout << "sydiff: " << sydiff << endl;
-                        cout << "dydiff: " << dydiff << endl;
-                        cout << kp2[matches[j].queryIdx].pt.x << " " << kp2[matches[j].queryIdx].pt.y << endl;
-                        cout << kp2[cluster[k].queryIdx].pt.x << " " << kp2[cluster[k].queryIdx].pt.y << endl;
-                        cout << kp1[matches[j].queryIdx].pt.x << " " << kp1[matches[j].queryIdx].pt.y << endl;
-                        cout << kp1[cluster[k].queryIdx].pt.x << " " << kp1[cluster[k].queryIdx].pt.y << endl;
-                        drawMatches(frame2, kp2, frame1, kp1, cluster, result, Scalar::all(-1), Scalar::all(-1), vector<char>(), DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
-                        imshow("debug", result);
-                        waitKey(0);
-                            
-                    }
-                    j = i;
-                    break;
+            for (int j = 1 + i; j < matches.size(); j++) {
+                if (mark[j]) {
+                    continue;
                 }
+                if (debug) {
+                    cout << cluster.size() << endl;
+                }
+                for (int k = 0; k < cluster.size(); k++) {
+                    float dxdiff = kp2[matches[j].queryIdx].pt.x - kp2[cluster[k].queryIdx].pt.x;
+                    float dydiff = kp2[matches[j].queryIdx].pt.y - kp2[cluster[k].queryIdx].pt.y;
+                    float sxdiff = kp1[matches[j].trainIdx].pt.x - kp1[cluster[k].trainIdx].pt.x;
+                    float sydiff = kp1[matches[j].trainIdx].pt.y - kp1[cluster[k].trainIdx].pt.y;
+                    sxdiff = sxdiff >= 0 ? sxdiff : (-1) * sxdiff;
+                    sydiff = sydiff >= 0 ? sydiff : (-1) * sydiff;
+                    dxdiff = dxdiff >= 0 ? dxdiff : (-1) * dxdiff;
+                    dydiff = dydiff >= 0 ? dydiff : (-1) * dydiff;
+                
+                    if (sxdiff < MAX_RANGE && sydiff < MAX_RANGE && dxdiff < MAX_RANGE && dydiff < MAX_RANGE) {
+                        mark[j] = true;
+                        cluster.push_back(matches[j]);
+                        if (debug) {
+                            Mat result;
+                            cout << "sxdiff: " << sxdiff << endl;
+                            cout << "dxdiff: " << dxdiff << endl;
+                            cout << "sydiff: " << sydiff << endl;
+                            cout << "dydiff: " << dydiff << endl;
+                            cout << kp2[matches[j].queryIdx].pt.x << " " << kp2[matches[j].queryIdx].pt.y << endl;
+                            cout << kp2[cluster[k].queryIdx].pt.x << " " << kp2[cluster[k].queryIdx].pt.y << endl;
+                            cout << kp1[matches[j].queryIdx].pt.x << " " << kp1[matches[j].queryIdx].pt.y << endl;
+                            cout << kp1[cluster[k].queryIdx].pt.x << " " << kp1[cluster[k].queryIdx].pt.y << endl;
+                            drawMatches(frame2, kp2, frame1, kp1, cluster, result, Scalar::all(-1), Scalar::all(-1), vector<char>(), DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
+                            imshow("debug", result);
+                            waitKey(0);
+                            
+                        }
+                        j = i;
+                        break;
+                    }
+                }
+            }
+            if (debug) {
+                Mat result;
+                drawMatches(frame2, kp2, frame1, kp1, cluster, result, Scalar::all(-1), Scalar::all(-1), vector<char>(), DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
+                imshow("debug", result);
+                waitKey(0);
+                cout << "------\n";
+            }
+            if (cluster.size() > MIN_CLUSTER) {
+                count++;
             }
         }
         if (debug) {
             Mat result;
-            drawMatches(frame2, kp2, frame1, kp1, cluster, result, Scalar::all(-1), Scalar::all(-1), vector<char>(), DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
+            drawMatches(frame2, kp2, frame1, kp1, matches, result, Scalar::all(-1), Scalar::all(-1), vector<char>(), DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
             imshow("debug", result);
             waitKey(0);
-            cout << "------\n";
         }
-        if (cluster.size() > MIN_CLUSTER) {
-            count++;
-        }
+        delete[] mark;
     }
-    if (debug) {
-        Mat result;
-        drawMatches(frame2, kp2, frame1, kp1, matches, result, Scalar::all(-1), Scalar::all(-1), vector<char>(), DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
-        imshow("debug", result);
-        waitKey(0);
-    }
-    delete[] mark;
-    return count;
-}
-
-
-
-void Detector::detectKeyPoints(Mat start, Mat dest) {
-    vector<KeyPoint> keyPoints1;
-    Mat descriptor1;
-
-    detector->detect(start, keyPoints1, Mat());
-    detector->compute(start, keyPoints1, descriptor1);
-    detector->detect(dest, destKeyPoints, Mat());
-    detector->compute(dest, destKeyPoints, destDescriptor);
-    startKeyPoints.push_back(keyPoints1);
-    startDescriptor.push_back(descriptor1);
-    if (debug) {
-        vector<DMatch> matches;
-        Mat imgMatch;
-        matcher->match(descriptor1, destDescriptor, matches);
-        drawMatches(start, keyPoints1, dest, destKeyPoints, matches, imgMatch, Scalar::all(-1), Scalar::all(-1), vector<char>(), DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
-        cout << "keyPoints: " << keyPoints1.size() << " " << destKeyPoints.size() << endl;
-        cout << "matches: " << matches.size() << endl;
-        namedWindow("Debug", WINDOW_NORMAL);
-        imshow("Debug", imgMatch);
-    }
-}
-
-void Detector::matchAndDelete() {
-    vector<DMatch> matches;
     
-    for (list<Mat>::iterator it = startDescriptor.begin(); it != startDescriptor.end(); it++) {
-        matcher->match(*it, destDescriptor, matches);
-
-        if (matches.size() > CARDETECTED) {
-            findCar(matches);
-        }
-        matches.clear();
-    }
-    if (startDescriptor.size() > 10) {
-        startDescriptor.pop_front();
-        startKeyPoints.pop_front();
-    }
-}
-
-void Detector::findCar(vector<DMatch> &matches) {
-    vector <vector<DMatch> > vehicle;
-    bool *mark = new bool[matches.size()];
-    for (int i = 0; i < matches.size(); ++i) {
-        mark[i] = true;
-    }
-
-    int circleNum = 0;
-    for (int i = 0; i < matches.size(); ++i) {
-        if (mark[i] == false) {
-            continue;
-        }
-        vehicle.push_back(vector<DMatch>());
-        vehicle[circleNum].push_back(matches[i]);
-        //  cout << vehicle.size() << " " << vehicle[circleNum].size() << endl;
-        mark[i] = false;
-        for (int j = 1; j < matches.size(); ++j) {
-            if (mark[j] == false) {
-                continue;
-            }
-            for (int k = 0; k < vehicle[circleNum].size(); ++k) {
-                float xDif = destKeyPoints[vehicle[circleNum][k].trainIdx].pt.x - destKeyPoints[matches[j].trainIdx].pt.x,
-                      yDif = destKeyPoints[vehicle[circleNum][k].trainIdx].pt.y - destKeyPoints[matches[j].trainIdx].pt.y;
-                xDif = xDif > 0 ? xDif : xDif * (-1);
-                yDif = yDif > 0 ? yDif : yDif * (-1);
-                if (xDif < MAXDIFF && yDif < MAXDIFF) {
-                    // cout << circleNum << " " <<  vehicle[circleNum].size() << " " << j << endl;
-                    vehicle[circleNum].push_back(matches[j]);
-                    mark[j] = false;
-                    j = 1;
-                    break;
-                }
-            }
-        }
-        if (vehicle[circleNum].size() > 5) {
-            carNum++;
-        }
-        circleNum++;
-        //cout << circleNum << " " << num << endl;
-    }
+    return count;
 }
 
 #endif /* DETECTOR_H */
