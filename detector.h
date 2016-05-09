@@ -49,7 +49,7 @@ public:
     void setStart(Range _startX, Range _startY);
     void setDest(Range _destX, Range _destY);
     void setMaxPoolSize(int _fps);
-    void detect(void (*showNum)(int, Mat));
+    void detect(void (*showNum)(int));
     void pushFrame(TwoMat frame);
 private:
     void detect_compute(Mat &frame, vector<KeyPoint> &kp, Mat &dp);
@@ -101,7 +101,7 @@ void Detector::setMaxPoolSize(int _fps) {
     maxPoolSize = _fps * RETAIN_TIME;
 }
 
-void Detector::detect(void (*showNum)(int, Mat)) {
+void Detector::detect(void (*showNum)(int)) {
     while (rawFramePool.empty());
     TwoMat frame = rawFramePool.front();
     rawFramePool.pop();
@@ -142,12 +142,8 @@ void Detector::detect(void (*showNum)(int, Mat)) {
         waitKey(0);
     }
     int matchNum = matchVehicle(dest2, dest2KeyPoints);
-    cout << matchNum << endl;
-    //Mat imgMatches;
-
-
-    //matchAndDelete(debug);
-    //showNum(carNum, imgMatches);
+    //cout << matchNum << endl;
+    showNum(carNum);
 }
 
 void Detector::detect_compute(Mat &frame, vector<KeyPoint> &kp, Mat &dp) {

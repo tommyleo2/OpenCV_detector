@@ -5,8 +5,8 @@
 using namespace cv;
 using namespace std;
 
-void test(int carNum, Mat pic) {
-    //cout << carNum << endl;
+void test(int carNum) {
+    cout << carNum << endl;
     //imshow(",,,", pic);
 }
 
