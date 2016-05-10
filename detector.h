@@ -143,7 +143,7 @@ void Detector::detect(void (*showNum)(int)) {
     }
     int matchNum = matchVehicle(dest2, dest2KeyPoints);
     //cout << matchNum << endl;
-    showNum(carNum);
+    showNum(matchNum);
 }
 
 void Detector::detect_compute(Mat &frame, vector<KeyPoint> &kp, Mat &dp) {
@@ -155,19 +155,26 @@ int Detector::findVehicle(vector<KeyPoint> &kp1, Mat &dp1, vector<KeyPoint> &kp2
     vector<DMatch> matches;
     int count = 0;
     matcher->match(dp2, dp1, matches);
+    priority_queue<int> deleteQueue;
     for (int i = 0; i < matches.size(); i++) {
         if (matches[i].distance < MAX_DIS) {
             float xDiff = kp2[matches[i].queryIdx].pt.x - kp1[matches[i].trainIdx].pt.x, yDiff = kp2[matches[i].queryIdx].pt.y - kp1[matches[i].trainIdx].pt.y;
             xDiff = xDiff >= 0 ? xDiff : (-1) * xDiff;
             yDiff = yDiff >= 0 ? yDiff : (-1) * yDiff;
             if (!(xDiff > MIN_DIFF && xDiff < MAX_DIFF && yDiff > MIN_DIFF && yDiff < MAX_DIFF)) {
-                kp2.erase(kp2.begin() + matches[i].queryIdx);
+                deleteQueue.push(matches[i].queryIdx);
+                //                kp2.erase(kp2.begin() + matches[i].queryIdx);
             } else {
                 count++;
             }
         } else {
-            kp2.erase(kp2.begin() + matches[i].queryIdx);
+            //            kp2.erase(kp2.begin() + matches[i].queryIdx);
+            deleteQueue.push(matches[i].queryIdx);
         }
+    }
+    while (!deleteQueue.empty()) {
+        kp2.erase(kp2.begin() + deleteQueue.top());
+        deleteQueue.pop();
     }
     return count;
 }
