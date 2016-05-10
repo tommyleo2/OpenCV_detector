@@ -10,3 +10,6 @@ v1.1
 
 v1.2
   1. Bug fixed. Delete keypoints from the tail of the vector, avoid out of range error
+
+v1.3
+  1. Improve debug info

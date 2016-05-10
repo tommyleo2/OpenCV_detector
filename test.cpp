@@ -15,7 +15,7 @@ int main() {
     //Range destX(950, 1200), destY(600, 1000);
     Range startX(150,  800), startY(550, 950);
     Range destX(170, 820), destY(550, 950);
-    Detector detector(startX, startY, destX, destY, 2, 1);
+    Detector detector(startX, startY, destX, destY, 2, DebugFlag::NO_DEBUG_INFO);
     VideoCapture video("test.MOV");
     TwoMat frame;
     while (1) {

@@ -24,7 +24,7 @@
 #define MAXDIFF 10
 #define MAX_DIS 100 //distance in DMatch
 #define MAX_DIFF 30
-#define MIN_DIFF 5   //KeyPoints distance
+#define MIN_DIFF 0   //KeyPoints distance
 #define MAX_RANGE 15 //maximum distance of keypoints in the same vehicle
 #define MIN_CLUSTER 5 //minimun number of keypoints to define a car
 #define RETAIN_TIME 10 //each frame will be retained for 10s in pool
@@ -41,9 +41,17 @@ typedef struct {
     Mat img;
 } Start;
 
+namespace DebugFlag {
+    enum DEBUG_FLAG {
+        NO_DEBUG_INFO,
+        SHOW_MATCH_RESULT,
+        SHOW_STEP
+    };
+}
+
 class Detector {
 public:
-    Detector(Range _startX, Range _startY, Range _destX, Range _destY, int _fps, bool _debug = false);
+    Detector(Range _startX, Range _startY, Range _destX, Range _destY, int _fps, DebugFlag::DEBUG_FLAG _debug = DebugFlag::NO_DEBUG_INFO);
     void setOriginStart(Mat _originStart);
     void setOriginDest(Mat _originDest);
     void setStart(Range _startX, Range _startY);
@@ -65,14 +73,14 @@ private:
     //int totalNum;
 
     int maxPoolSize;
-    bool debug;
+    DebugFlag::DEBUG_FLAG debug;
 };
 
 void Detector::pushFrame(TwoMat frame) {
     rawFramePool.push(frame);
 }
 
-Detector::Detector(Range _startX, Range _startY, Range _destX, Range _destY, int _fps, bool _debug) {
+Detector::Detector(Range _startX, Range _startY, Range _destX, Range _destY, int _fps, DebugFlag::DEBUG_FLAG _debug) {
     startX = _startX;
     startY = _startY;
     destX = _destX;
@@ -116,10 +124,22 @@ void Detector::detect(void (*showNum)(int)) {
     detect_compute(dest1, dest1KeyPoints, dest1Descriptor);
     detect_compute(dest2, dest2KeyPoints, dest2Descriptor);
     if (debug) {
+        Mat imgWithPoint;
         cout << "origin:\n";
         cout << "start2.KeyPoints.size() = " << start2KeyPoints.size() << endl;
+        drawKeypoints(start2, start2KeyPoints, imgWithPoint);
+        imshow("debug", imgWithPoint);
+        waitKey(0);
         cout << "dest2.KeyPoints.size() = " << dest2KeyPoints.size() << endl;
+        drawKeypoints(dest2, dest2KeyPoints, imgWithPoint);
         cout << "---\n";
+        imshow("debug", imgWithPoint);
+        waitKey(0);
+        vector<DMatch> matches;
+        matcher->match(start2Descriptor, dest2Descriptor, matches);
+        drawMatches(start1, start1KeyPoints, dest2, dest2KeyPoints, matches, imgWithPoint, Scalar::all(-1), Scalar::all(-1), vector<char>(), DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
+        imshow("debug", imgWithPoint);
+        waitKey(0);
     }
     int startNum = findVehicle(start1KeyPoints, start1Descriptor, start2KeyPoints, start2Descriptor);
     int destNum = findVehicle(dest1KeyPoints, dest1Descriptor, dest2KeyPoints, dest2Descriptor);
@@ -132,6 +152,7 @@ void Detector::detect(void (*showNum)(int)) {
     }
     if (debug) {
         Mat imgWithPoint;
+        cout << "deleted: " << endl;
         cout << "start2.KeyPoints.size() = " << start2KeyPoints.size() << endl;
         drawKeypoints(start2, start2KeyPoints, imgWithPoint);
         imshow("debug", imgWithPoint);
@@ -155,9 +176,12 @@ int Detector::findVehicle(vector<KeyPoint> &kp1, Mat &dp1, vector<KeyPoint> &kp2
     vector<DMatch> matches;
     int count = 0;
     matcher->match(dp2, dp1, matches);
+    if (debug) {
+        cout << "matches.size(): " << matches.size() << endl;
+    }
     priority_queue<int> deleteQueue;
     for (int i = 0; i < matches.size(); i++) {
-        if (matches[i].distance < MAX_DIS) {
+        if (1/*matches[i].distance < MAX_DIS*/) {
             float xDiff = kp2[matches[i].queryIdx].pt.x - kp1[matches[i].trainIdx].pt.x, yDiff = kp2[matches[i].queryIdx].pt.y - kp1[matches[i].trainIdx].pt.y;
             xDiff = xDiff >= 0 ? xDiff : (-1) * xDiff;
             yDiff = yDiff >= 0 ? yDiff : (-1) * yDiff;
@@ -204,14 +228,14 @@ int Detector::matchVehicle(Mat &frame2, vector<KeyPoint> &kp2) {
             mark[i] = true;
             vector<DMatch> cluster;
             cluster.push_back(matches[i]);
-            if (debug) {
+            if (debug == DebugFlag::SHOW_STEP) {
                 cout << "--------\nkpNum:\n";
             }
             for (int j = 1 + i; j < matches.size(); j++) {
                 if (mark[j]) {
                     continue;
                 }
-                if (debug) {
+                if (debug == DebugFlag::SHOW_STEP) {
                     cout << cluster.size() << endl;
                 }
                 for (int k = 0; k < cluster.size(); k++) {
@@ -227,7 +251,7 @@ int Detector::matchVehicle(Mat &frame2, vector<KeyPoint> &kp2) {
                     if (sxdiff < MAX_RANGE && sydiff < MAX_RANGE && dxdiff < MAX_RANGE && dydiff < MAX_RANGE) {
                         mark[j] = true;
                         cluster.push_back(matches[j]);
-                        if (debug) {
+                        if (debug == DebugFlag::SHOW_STEP) {
                             Mat result;
                             cout << "sxdiff: " << sxdiff << endl;
                             cout << "dxdiff: " << dxdiff << endl;
@@ -247,7 +271,7 @@ int Detector::matchVehicle(Mat &frame2, vector<KeyPoint> &kp2) {
                     }
                 }
             }
-            if (debug) {
+            if (debug == DebugFlag::SHOW_STEP) {
                 Mat result;
                 drawMatches(frame2, kp2, frame1, kp1, cluster, result, Scalar::all(-1), Scalar::all(-1), vector<char>(), DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
                 imshow("debug", result);
