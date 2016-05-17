@@ -1,10 +1,5 @@
-*.JPG
-CMakeCache.txt
-CMakeFiles/*
-Makefile
-*.cmake
-*.mp4
-*.MOV
-*.avi
+build/*
+forTest/*
 *~
 detector
+*#*
