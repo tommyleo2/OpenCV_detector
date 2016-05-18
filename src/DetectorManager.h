@@ -25,7 +25,6 @@
 #include "Queue.h"
 #include "VehicleDetector.h"
 
-#define RETAIN_TIME 10
 #define CARDETECTED 20
 #define MAXDIFF 10
 #define MAX_RANGE 15 //maximum distance of keypoints in the same vehicle
